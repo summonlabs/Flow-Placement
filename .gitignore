@@ -1,0 +1,43 @@
+# Build outputs
+/build/
+/out/
+build-*/
+out-*/
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.dll
+*.so
+*.dylib
+*.a
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+*.cmake.stamp
+install_manifest.txt
+
+# Editors / OS
+.vs/
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local scratch
+/scratch/
+/.scratch/
+*.log
+core.*
+*.dmp
+*.tmp
