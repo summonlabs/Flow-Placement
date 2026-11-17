@@ -60,7 +60,10 @@ endfunction()
 function(flowplace_apply_sanitizers target)
   if(FLOWPLACE_ENABLE_ASAN)
     if(MSVC)
-      target_compile_options(${target} PRIVATE /fsanitize=address)
+      # Debug information is required: without it MSVC warns C5072, which /WX
+      # turns into an error, so the sanitized build did not compile.
+      target_compile_options(${target} PRIVATE /fsanitize=address /Zi)
+      target_link_options(${target} PRIVATE /INCREMENTAL:NO /DEBUG)
     else()
       target_compile_options(${target} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
       target_link_options(${target} PRIVATE -fsanitize=address)

@@ -4,9 +4,12 @@
 #include "fixtures.hpp"
 #include "harness.hpp"
 
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -572,4 +575,44 @@ FP_TEST(store, closed_store_refuses_mutation) {
   AttemptRecord record;
   record.attempt = AttemptId{1};
   FP_CHECK_EQ(store.value().AppendAttemptStart(record).code(), StatusCode::kNotRunning);
+}
+
+FP_TEST(store, compaction_waits_for_a_reader_to_close) {
+  TempStore temp("reader");
+  const PlacementEngine engine;
+  Result<PlacementStore> store = PlacementStore::Open(temp.path, StoreOptions{});
+  FP_REQUIRE(store.ok());
+  for (std::uint64_t flow = 1; flow <= 3; ++flow) {
+    FP_REQUIRE(store.value()
+                   .CommitPlacement(IntentFor(FlowRequest(flow), engine), IncumbentDelta::kNoIncumbent,
+                                    Digest{flow, flow}, IncarnationId{1}, FabricEpoch{1})
+                   .ok());
+  }
+  bool reader_opened = false;
+  bool compacted = false;
+  {
+    // Another tool reading the store (an inspection, a scan) holds the journal
+    // open while compaction replaces it, and closes it shortly after.
+    std::ifstream reader(temp.path, std::ios::binary);
+    reader_opened = reader.is_open();
+    PlacementStore& durable = store.value();
+    std::thread writer([&durable, &compacted] { compacted = durable.Compact().ok(); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    reader.close();
+    writer.join();
+  }
+  // The store keeps accepting commits after the compaction.
+  const bool committed_after =
+      store.value()
+          .CommitPlacement(IntentFor(FlowRequest(4), engine), IncumbentDelta::kNoIncumbent,
+                           Digest{4, 4}, IncarnationId{1}, FabricEpoch{1})
+          .ok();
+  FP_CHECK(store.value().Close().ok());
+  FP_CHECK(reader_opened);
+  // The compaction is not lost because a reader had the journal open for a moment.
+  FP_CHECK(compacted);
+  FP_CHECK(committed_after);
+  Result<PlacementStore> reopened = PlacementStore::Open(temp.path, StoreOptions{});
+  FP_REQUIRE(reopened.ok());
+  FP_CHECK_EQ(reopened.value().recovery().placements_total, std::uint64_t{4});
 }

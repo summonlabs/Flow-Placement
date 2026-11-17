@@ -243,8 +243,15 @@ Result<TcpListener> TcpListener::Bind(const std::string& address, std::uint16_t 
   const NativeSocket socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (socket == kInvalidSocket) return LastSocketError("socket");
   int one = 1;
+#ifdef _WIN32
+  // SO_REUSEADDR on Windows lets a second socket bind a port that is still
+  // listening; exclusive use makes that second bind fail instead.
+  static_cast<void>(setsockopt(socket, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                               reinterpret_cast<const char*>(&one), sizeof(one)));
+#else
   static_cast<void>(setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
                                reinterpret_cast<const char*>(&one), sizeof(one)));
+#endif
   sockaddr_in local;
   std::memset(&local, 0, sizeof(local));
   local.sin_family = AF_INET;

@@ -10,6 +10,7 @@
 
 #include "flowplace/codec.hpp"
 #include "flowplace/scenario.hpp"
+#include "flowplace/transport.hpp"
 #include "flowplace/wire.hpp"
 
 using namespace flowplace;
@@ -382,4 +383,12 @@ FP_TEST(adversarial_input, unrepresentable_identifiers_are_rejected) {
       "policy id 1 gen 1 objectives cost:min\n"
       "expected pathauth 1 cset 1 cap 1 policy 1 qos 1 epoch 1\n";
   FP_CHECK(!ParseScenario(text, Limits{}).ok());
+}
+
+FP_TEST(adversarial_input, a_second_listener_cannot_take_a_listening_port) {
+  Result<TcpListener> first = TcpListener::Bind("127.0.0.1", 0);
+  FP_REQUIRE(first.ok());
+  Result<TcpListener> second = TcpListener::Bind("127.0.0.1", first.value().port());
+  // Two coordinators must never share one listening port: the second bind fails.
+  FP_CHECK(!second.ok());
 }

@@ -134,11 +134,27 @@ Status SyncFile(std::FILE* file) {
 
 Status ReplaceFileAtomically(const std::string& from, const std::string& to) {
 #ifdef _WIN32
-  if (MoveFileExA(from.c_str(), to.c_str(),
-                  MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0) {
-    return Status(StatusCode::kStoreIoError, "MoveFileEx failed for " + to);
+  // While a reader has the target open (an inspection, an antivirus or
+  // indexing scan) the replacement fails until the reader closes the file, so
+  // it is retried for a bounded time (about 2 s) instead of failing the write.
+  // A directory in the way is not transient and fails at once.
+  for (int attempt = 0;; ++attempt) {
+    if (MoveFileExA(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) !=
+        0) {
+      return Status::Ok();
+    }
+    const DWORD code = GetLastError();
+    const DWORD attributes = GetFileAttributesA(to.c_str());
+    const bool directory =
+        attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    const bool transient = (code == ERROR_ACCESS_DENIED || code == ERROR_SHARING_VIOLATION ||
+                            code == ERROR_LOCK_VIOLATION) &&
+                           !directory;
+    if (!transient || attempt >= 100) {
+      return Status(StatusCode::kStoreIoError, "MoveFileEx failed for " + to);
+    }
+    Sleep(20);
   }
-  return Status::Ok();
 #else
   if (std::rename(from.c_str(), to.c_str()) != 0) {
     return Status(StatusCode::kStoreIoError, "rename failed for " + to);
